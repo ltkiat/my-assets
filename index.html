@@ -1,0 +1,433 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>互动视频体验 - 移动端 Web App</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <style>
+        body, html {
+            margin: 0;
+            padding: 0;
+            overflow: hidden;
+            background: #000;
+            height: 100%;
+            width: 100%;
+            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+            -webkit-tap-highlight-color: transparent;
+        }
+
+        /* 3D 翻转容器设置 */
+        .scene {
+            width: 100vw;
+            height: 100vh;
+            perspective: 2000px;
+        }
+
+        .card {
+            width: 100%;
+            height: 100%;
+            position: relative;
+            transition: transform 0.8s cubic-bezier(0.4, 0, 0.2, 1);
+            transform-style: preserve-3d;
+        }
+
+        .card.is-flipped {
+            transform: rotateY(180deg);
+        }
+
+        .card-face {
+            position: absolute;
+            width: 100%;
+            height: 100%;
+            backface-visibility: hidden;
+            -webkit-backface-visibility: hidden;
+            overflow: hidden;
+        }
+
+        .card-face-back {
+            transform: rotateY(180deg);
+            background: #050505;
+            z-index: 10;
+        }
+
+        /* 视频层样式 */
+        .video-viewport {
+            position: absolute;
+            inset: 0;
+            background: #000;
+        }
+
+        #bgVideo {
+            position: absolute;
+            inset: 0;
+            width: 100%;
+            height: 100%;
+            object-fit: cover;
+            filter: blur(40px) brightness(0.2);
+            z-index: 1;
+        }
+
+        #mainVideo {
+            position: absolute;
+            inset: 0;
+            width: 100%;
+            height: 100%;
+            object-fit: contain; 
+            z-index: 2;
+        }
+
+        /* 详情页图集样式 */
+        .gallery-container {
+            width: 100%;
+            height: 100%;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            position: relative;
+            background: radial-gradient(circle at center, #111 0%, #000 100%);
+        }
+
+        .gallery-slide {
+            position: absolute;
+            width: 100%;
+            height: 100%;
+            opacity: 0;
+            transition: opacity 0.6s ease-in-out, transform 0.6s ease-out;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            transform: scale(0.95);
+        }
+
+        .gallery-slide.active {
+            opacity: 1;
+            transform: scale(1);
+        }
+
+        .gallery-slide img {
+            max-width: 90%;
+            max-height: 85%;
+            object-fit: contain;
+            border-radius: 16px;
+            box-shadow: 0 30px 60px rgba(0,0,0,0.8);
+            border: 1px solid rgba(255,255,255,0.05);
+        }
+
+        /* UI 控件样式 */
+        .glass-panel {
+            background: rgba(255, 255, 255, 0.03);
+            backdrop-filter: blur(20px);
+            -webkit-backdrop-filter: blur(20px);
+            border: 1px solid rgba(255, 255, 255, 0.05);
+            border-radius: 28px;
+        }
+
+        input[type="range"] {
+            -webkit-appearance: none;
+            appearance: none;
+            background: transparent;
+            cursor: pointer;
+            width: 100%;
+        }
+
+        input[type="range"]::-webkit-slider-runnable-track {
+            background: rgba(255, 255, 255, 0.05);
+            border-radius: 999px;
+            height: 54px;
+            padding: 4px;
+        }
+
+        /* 呼吸感滑块 */
+        input[type="range"]::-webkit-slider-thumb {
+            -webkit-appearance: none;
+            height: 46px;
+            width: 60px;
+            background: #fff;
+            border-radius: 18px;
+            box-shadow: 0 0 20px rgba(255, 255, 255, 0.4), 0 4px 10px rgba(0,0,0,0.3);
+            cursor: grab;
+            transition: transform 0.1s ease, background 0.1s ease;
+        }
+
+        input[type="range"]:active::-webkit-slider-thumb {
+            transform: scale(0.98);
+            background: #f0f0f0;
+            cursor: grabbing;
+        }
+
+        .shimmer-text {
+            background: linear-gradient(90deg, rgba(255,255,255,0.1) 0%, rgba(255,255,255,0.6) 50%, rgba(255,255,255,0.1) 100%);
+            background-size: 200% 100%;
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+            animation: shimmer 6s infinite linear;
+        }
+
+        @keyframes shimmer {
+            0% { background-position: 200% 0; }
+            100% { background-position: -200% 0; }
+        }
+
+        #fileInput { display: none; }
+    </style>
+</head>
+<body>
+
+    <div class="scene">
+        <div class="card" id="mainCard">
+            <!-- 正面：交互式视频页 -->
+            <div class="card-face card-face-front">
+                <div class="video-viewport">
+                    <!-- 使用用户提供的 GitHub 视频链接 -->
+                    <video id="bgVideo" crossorigin="anonymous" playsinline loop muted>
+                        <source src="https://github.com/ltkiat/my-assets/raw/refs/heads/main/77974.mov" type="video/quicktime">
+                    </video>
+                    <video id="mainVideo" crossorigin="anonymous" preload="auto" playsinline loop muted>
+                        <source src="https://github.com/ltkiat/my-assets/raw/refs/heads/main/77974.mov" type="video/quicktime">
+                    </video>
+                    
+                    <div id="loadingIndicator" class="absolute inset-0 flex items-center justify-center bg-black/20 hidden z-40">
+                        <div class="w-8 h-8 border-2 border-white/10 border-t-white/80 rounded-full animate-spin"></div>
+                    </div>
+                </div>
+
+                <!-- 顶部 UI (仅保留时间显示) -->
+                <div class="fixed top-8 left-0 right-0 flex flex-col items-center gap-3 z-50 pointer-events-none">
+                    <div id="timeOverlay" class="glass-panel px-4 py-1.5 text-white/40 font-mono text-[9px] tracking-[0.2em] opacity-0 transition-opacity">
+                        00:00 / 00:00
+                    </div>
+                </div>
+
+                <!-- 底部控制 -->
+                <div class="fixed bottom-10 left-1/2 -translate-x-1/2 w-[92%] max-w-sm z-50 glass-panel p-5 space-y-4">
+                    <div class="relative h-[54px]">
+                        <div class="absolute inset-0 flex items-center justify-center pointer-events-none">
+                            <span class="text-[10px] font-black tracking-[0.5em] uppercase shimmer-text">
+                                Slide to Explore
+                            </span>
+                        </div>
+                        <input type="range" id="videoScrubber" min="0" max="100" value="0" step="0.05">
+                    </div>
+
+                    <div class="flex items-center justify-between">
+                        <div class="flex flex-col">
+                            <span class="text-[8px] text-white/10 uppercase tracking-tighter">Status</span>
+                            <span class="text-[10px] text-white/40 italic">Ready to Flip</span>
+                        </div>
+                        <button onclick="document.getElementById('fileInput').click()" class="bg-white/10 text-white/90 px-5 py-2 rounded-2xl text-[10px] font-bold border border-white/5 active:bg-white/20">
+                            Upload
+                        </button>
+                        <input type="file" id="fileInput" accept="video/*">
+                    </div>
+                </div>
+            </div>
+
+            <!-- 反面：联网图集页 -->
+            <div class="card-face card-face-back">
+                <div class="gallery-container" id="gallery"></div>
+                
+                <div class="absolute bottom-12 left-0 right-0 flex flex-col items-center gap-6 z-50">
+                    <button onclick="flipBack()" class="glass-panel px-10 py-3 text-[11px] text-white font-black uppercase tracking-[0.4em] active:scale-95 transition-all">
+                        Return
+                    </button>
+                    <div class="flex flex-col items-center">
+                        <p id="galleryStatus" class="text-[10px] text-white/30 uppercase tracking-[0.2em]">Memories Syncing</p>
+                        <div class="w-12 h-0.5 bg-white/10 mt-2 rounded-full overflow-hidden">
+                            <div id="progressBar" class="h-full bg-white/40 transition-all duration-300" style="width: 0%"></div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- 音效资源 -->
+    <audio id="unlockAudio" preload="auto">
+        <source src="https://assets.mixkit.co/active_storage/sfx/2571/2571-preview.mp3" type="audio/mpeg">
+    </audio>
+    <audio id="funnyAudio" preload="auto">
+        <source src="https://assets.mixkit.co/active_storage/sfx/0652/0652-preview.mp3" type="audio/mpeg">
+    </audio>
+
+    <script>
+        const mainCard = document.getElementById('mainCard');
+        const mainVideo = document.getElementById('mainVideo');
+        const bgVideo = document.getElementById('bgVideo');
+        const scrubber = document.getElementById('videoScrubber');
+        const timeOverlay = document.getElementById('timeOverlay');
+        const fileInput = document.getElementById('fileInput');
+        const gallery = document.getElementById('gallery');
+        const galleryStatus = document.getElementById('galleryStatus');
+        const progressBar = document.getElementById('progressBar');
+        const unlockAudio = document.getElementById('unlockAudio');
+        const funnyAudio = document.getElementById('funnyAudio');
+
+        let rAFId = null;
+        let audioContextUnlocked = false;
+
+        // 在线图片链接
+        const images = [
+            "https://i.postimg.cc/VNNc2X90/IMG_0695.jpg",
+            "https://i.postimg.cc/Hx7FCzr2/IMG_4989.jpg",
+            "https://i.postimg.cc/MTjg85nt/IMG_8038.jpg",
+            "https://i.postimg.cc/j5JBrcDR/IMG_9355.jpg",
+            "https://i.postimg.cc/wT94WgQ1/30731751_B7EC_40D9_8161_F37AAB644D6D_(2).png",
+            "https://i.postimg.cc/MKtPNNs8/C701E72D_97D1_4C84_B91E_C57890825ECE.png",
+            "https://i.postimg.cc/dtnHpp56/F75E3D58_F909_42AC_BE74_CBB8B9D1E3D4.png"
+        ];
+
+        let currentSlide = 0;
+        let galleryInterval = null;
+
+        function initGallery() {
+            gallery.innerHTML = '';
+            images.forEach((src, index) => {
+                const div = document.createElement('div');
+                div.className = `gallery-slide ${index === 0 ? 'active' : ''}`;
+                div.innerHTML = `<img src="${src}" alt="Memory ${index}" onerror="this.src='https://picsum.photos/seed/${index}/800/1200'">`;
+                gallery.appendChild(div);
+            });
+        }
+
+        function startGallery() {
+            if (galleryInterval) clearInterval(galleryInterval);
+            galleryStatus.innerText = "Looping Moments";
+            galleryStatus.classList.add('text-blue-300');
+            galleryInterval = setInterval(() => {
+                const slides = document.querySelectorAll('.gallery-slide');
+                if (!slides.length) return;
+                slides[currentSlide].classList.remove('active');
+                currentSlide = (currentSlide + 1) % slides.length;
+                slides[currentSlide].classList.add('active');
+                progressBar.style.width = `${((currentSlide + 1) / slides.length) * 100}%`;
+            }, 1500);
+        }
+
+        function playUnlockSound() {
+            unlockAudio.currentTime = 0;
+            unlockAudio.play().catch(() => {});
+        }
+
+        function triggerFlip() {
+            // 震动反馈
+            if (navigator.vibrate) {
+                navigator.vibrate(10);
+            }
+
+            // 搞笑音效预热与播放权限锁定
+            funnyAudio.volume = 0;
+            funnyAudio.play().then(() => {
+                funnyAudio.pause();
+                funnyAudio.volume = 1.0; 
+            }).catch(() => {});
+
+            playUnlockSound();
+
+            initGallery();
+            mainCard.classList.add('is-flipped');
+            mainVideo.pause();
+            bgVideo.pause();
+
+            // 翻转到背面时播放搞笑音效
+            setTimeout(() => {
+                funnyAudio.currentTime = 0;
+                funnyAudio.play().catch(e => console.log("搞笑音效播放失败"));
+            }, 350); 
+            
+            galleryStatus.innerText = "Surprise!";
+            setTimeout(() => { 
+                startGallery(); 
+            }, 500);
+        }
+
+        function flipBack() {
+            mainCard.classList.remove('is-flipped');
+            if (galleryInterval) clearInterval(galleryInterval);
+            galleryStatus.innerText = "Memories Syncing";
+            galleryStatus.classList.remove('text-blue-300');
+            progressBar.style.width = "0%";
+            currentSlide = 0;
+            scrubber.value = 0;
+            updateSeek(0);
+        }
+
+        // 终极解锁逻辑
+        const fullUnlock = () => {
+            if (audioContextUnlocked) return;
+            [unlockAudio, funnyAudio].forEach(audio => {
+                audio.muted = false;
+                audio.play().then(() => {
+                    audio.pause();
+                    audio.currentTime = 0;
+                }).catch(e => console.log("等待交互中..."));
+            });
+            audioContextUnlocked = true;
+        };
+
+        scrubber.addEventListener('touchstart', fullUnlock, { once: true }); 
+        scrubber.addEventListener('mousedown', fullUnlock, { once: true });
+
+        scrubber.addEventListener('touchend', () => {
+            if (parseInt(scrubber.value) > 80) {
+                triggerFlip();
+            } else {
+                scrubber.value = 0;
+                updateSeek(0);
+            }
+        });
+
+        scrubber.addEventListener('mouseup', () => {
+            if (parseInt(scrubber.value) > 80) triggerFlip();
+            else { scrubber.value = 0; updateSeek(0); }
+        });
+
+        function updateSeek(targetTime) {
+            if (rAFId) cancelAnimationFrame(rAFId);
+            rAFId = requestAnimationFrame(() => {
+                mainVideo.currentTime = targetTime;
+                bgVideo.currentTime = targetTime;
+                if (!isNaN(mainVideo.duration)) {
+                    timeOverlay.innerText = `${formatTime(mainVideo.currentTime)} / ${formatTime(mainVideo.duration)}`;
+                }
+            });
+        }
+
+        function formatTime(seconds) {
+            const m = Math.floor(seconds / 60);
+            const s = Math.floor(seconds % 60);
+            return `${m.toString().padStart(2, '0')}:${s.toString().padStart(2, '0')}`;
+        }
+
+        fileInput.addEventListener('change', (e) => {
+            const file = e.target.files[0];
+            if (file) {
+                const url = URL.createObjectURL(file);
+                mainVideo.src = url;
+                bgVideo.src = url;
+                scrubber.value = 0;
+            }
+        });
+
+        mainVideo.addEventListener('loadedmetadata', () => {
+            timeOverlay.classList.remove('opacity-0');
+            timeOverlay.innerText = `00:00 / ${formatTime(mainVideo.duration)}`;
+        });
+
+        scrubber.addEventListener('input', (e) => {
+            if (!mainVideo.duration) return;
+            updateSeek(mainVideo.duration * (e.target.value / 100));
+        });
+
+        mainVideo.addEventListener('timeupdate', () => {
+            if (!mainVideo.paused) {
+                scrubber.value = (mainVideo.currentTime / mainVideo.duration) * 100;
+                bgVideo.currentTime = mainVideo.currentTime;
+                timeOverlay.innerText = `${formatTime(mainVideo.currentTime)} / ${formatTime(mainVideo.duration)}`;
+            }
+        });
+
+        window.addEventListener('DOMContentLoaded', initGallery);
+    </script>
+</body>
+</html>
