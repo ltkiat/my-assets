@@ -324,19 +324,48 @@
             }, 1500);
         }
 
-        // 【核心修改点2：音效解锁与播放权限】
+        // 这一段确保用户一碰滑块，浏览器就放开音频权限
+// 核心：用户一碰滑块立刻激活所有媒体权限
         const unlockAllMedia = () => {
             if (audioContextUnlocked) return;
+            
+            // 同时激活解锁音效和搞笑音效的权限
             [unlockAudio, funnyAudio].forEach(audio => {
+                audio.muted = false; // 显式解除静音
                 audio.play().then(() => {
                     audio.pause();
                     audio.currentTime = 0;
-                }).catch(() => {});
+                }).catch(e => console.log("音频权限预热中..."));
             });
+
+            // 确保视频同步开始播放
             mainVideo.play().catch(() => {});
             bgVideo.play().catch(() => {});
+            
             audioContextUnlocked = true;
         };
+
+        // 绑定触摸事件，手指一碰到滑块就执行解锁
+        scrubber.addEventListener('touchstart', unlockAllMedia, { passive: true });
+        scrubber.addEventListener('mousedown', unlockAllMedia);
+
+        // 修改 touchend 逻辑，确保松开时响解锁音效
+        // 监听手指松开：判断是否滑到底部并触发翻转和音效
+        scrubber.addEventListener('touchend', () => {
+            const currentValue = parseFloat(scrubber.value);
+            
+            if (currentValue > 85) {
+                // 【核心修改】在翻转逻辑执行前，立即显式播放解锁提示音
+                unlockAudio.play().catch(e => console.log("解锁音效播放受限"));
+                
+                // 执行原有的翻转逻辑
+                triggerFlip();
+            } else {
+                // 未滑到位，回弹逻辑
+                scrubber.value = 0;
+                updateSeek(0);
+            }
+        });
 
         function triggerFlip() {
             if (navigator.vibrate) navigator.vibrate(10);
@@ -367,22 +396,14 @@
             updateSeek(0);
         }
 
-        // 绑定交互
+        // 1. 监听开始触摸：立刻激活所有音效权限
         scrubber.addEventListener('touchstart', unlockAllMedia, { passive: true });
         scrubber.addEventListener('mousedown', unlockAllMedia);
 
-        scrubber.addEventListener('touchend', () => {
-            if (parseFloat(scrubber.value) > 85) {
-                triggerFlip();
-            } else {
-                scrubber.value = 0;
-                updateSeek(0);
-            }
-        });
-
-        scrubber.addEventListener('mouseup', () => {
-            if (parseFloat(scrubber.value) > 85) triggerFlip();
-            else { scrubber.value = 0; updateSeek(0); }
+        // 2. 监听滑动过程：实时更新视频画面
+        scrubber.addEventListener('input', (e) => {
+            if (!mainVideo.duration) return;
+            updateSeek(mainVideo.duration * (e.target.value / 100));
         });
 
         function updateSeek(targetTime) {
